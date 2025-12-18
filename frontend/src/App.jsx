@@ -73,7 +73,18 @@ export default function App() {
   const removeRow = (idx) =>
     setItems((prev) => prev.filter((_, i) => i !== idx));
 
-  // ✅ Generar PDF (local por ahora)
+  // ✅ Limpiar TODO el formulario después de generar PDF
+  const resetForm = () => {
+    setCliente("");
+    setVigencia("1 DÍA");
+    setAplicarIva(true);
+    setCostoEnvio(0);
+    setItems([
+      { codigo: "", descripcion: "", cantidad: 1, precio: 0, precioUI: "" },
+    ]);
+  };
+
+  // ✅ Generar PDF
   const generarPDF = async () => {
     try {
       const payload = {
@@ -85,7 +96,7 @@ export default function App() {
         aplicarIva,
         costoEnvio,
 
-        // ✅ mandamos SOLO lo necesario (sin precioUI) y sin warnings de ESLint
+        // ✅ mandamos SOLO lo necesario (sin precioUI)
         items: items.map((it) => ({
           codigo: it.codigo,
           descripcion: it.descripcion,
@@ -104,7 +115,7 @@ export default function App() {
 
       if (!r.ok) {
         alert(
-          "No se pudo generar el PDF. Backend configurado: ${API_URL}\n\nRevisa que Render esté en Live y que CORS_ORIGIN tenga tu dominio de Vercel."
+          `No se pudo generar el PDF.\n\nBackend configurado: ${API_URL}\n\nRevisa que Render esté en Live y que CORS_ORIGIN tenga tu dominio de Vercel.`
         );
         return;
       }
@@ -118,6 +129,9 @@ export default function App() {
       a.click();
 
       URL.revokeObjectURL(url);
+
+      // ✅ limpiar después de generar correctamente
+      resetForm();
     } catch (err) {
       console.error(err);
       alert(
