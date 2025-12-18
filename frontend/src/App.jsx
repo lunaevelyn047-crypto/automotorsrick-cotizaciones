@@ -94,7 +94,9 @@ export default function App() {
         })),
       };
 
-      const r = await fetch("http://localhost:4000/api/pdf", {
+      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+
+      const r = await fetch(`${API_URL}/api/pdf`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
