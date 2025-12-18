@@ -15,7 +15,8 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "puppeteer": "^24.33.0"
+    "puppeteer-core": "^24.33.0",
+    "@sparticuz/chromium": "^131.0.0"
   }
 }
 

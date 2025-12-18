@@ -104,7 +104,7 @@ export default function App() {
 
       if (!r.ok) {
         alert(
-          "No se pudo generar el PDF. Asegúrate de que el backend esté corriendo en http://localhost:4000"
+          "No se pudo generar el PDF. Backend configurado: ${API_URL}\n\nRevisa que Render esté en Live y que CORS_ORIGIN tenga tu dominio de Vercel."
         );
         return;
       }

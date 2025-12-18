@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const puppeteer = require("puppeteer");
+const chromium = require("@sparticuz/chromium");
 
 const app = express();
 app.use(cors());
@@ -158,15 +159,10 @@ app.post("/api/pdf", async (req, res) => {
     const html = renderHTML(req.body);
 
     const browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--no-zygote",
-        "--single-process",
-      ],
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
     });
 
     const page = await browser.newPage();
