@@ -184,4 +184,4 @@ app.post("/api/pdf", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`PDF server en puerto ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => console.log(`PDF server en puerto ${PORT}`));
