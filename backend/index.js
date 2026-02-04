@@ -3,7 +3,6 @@ const cors = require("cors");
 const puppeteer = require("puppeteer-core");
 const chromium = require("@sparticuz/chromium");
 
-
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
@@ -36,7 +35,7 @@ function renderHTML(data) {
 
   const subtotal = items.reduce(
     (acc, it) => acc + Number(it.cantidad || 0) * Number(it.precio || 0),
-    0
+    0,
   );
   const envio = Number(costoEnvio || 0);
   const iva = aplicarIva ? subtotal * 0.16 : 0;
@@ -137,13 +136,13 @@ function renderHTML(data) {
 
     <div class="summary">
       <div class="sumRow"><div class="k">Subtotal</div><div class="v">${money(
-        subtotal
+        subtotal,
       )}</div></div>
       <div class="sumRow"><div class="k">Costo Envío</div><div class="v">${money(
-        envio
+        envio,
       )}</div></div>
       <div class="sumRow"><div class="k">IVA</div><div class="v">${money(
-        iva
+        iva,
       )}</div></div>
       <div class="sumRow" style="border-top:1px solid #e2e2e2; margin-top:6px; padding-top:10px;">
         <div class="k">Total</div><div class="v">${money(total)}</div>
@@ -156,37 +155,44 @@ function renderHTML(data) {
 }
 
 app.post("/api/pdf", async (req, res) => {
+  let browser = null;
+  let page = null;
+
   try {
     const html = renderHTML(req.body);
 
-    const browser = await puppeteer.launch({
+    browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
     });
 
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    page = await browser.newPage();
+
+    // (Opcional) baja un poco carga
+    await page.setContent(html, { waitUntil: "domcontentloaded" });
 
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
     });
 
-    await browser.close();
-
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      'attachment; filename="cotizacion.pdf"'
-    );
-    res.send(pdf);
+    res.setHeader("Content-Disposition", 'attachment; filename="cotizacion.pdf"');
+    return res.status(200).send(pdf);
+
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Error generando PDF" });
+    console.error("PDF error:", e);
+    return res.status(500).json({ error: "Error generando PDF" });
+
+  } finally {
+    // ✅ Pase lo que pase, libera memoria
+    try { if (page) await page.close(); } catch (_) {}
+    try { if (browser) await browser.close(); } catch (_) {}
   }
 });
+
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, "0.0.0.0", () => console.log(`PDF server en puerto ${PORT}`));
