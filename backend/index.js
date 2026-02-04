@@ -5,23 +5,20 @@ const chromium = require("@sparticuz/chromium");
 
 const app = express();
 
-// ✅ CORS seguro para Vercel (dominio fijo + previews) y local
+// --- ✅ CORS (producción + previews de Vercel + local) ---
 const allowedExact = [
-  process.env.CORS_ORIGIN, // ej: https://automotorsrick-cotizaciones.vercel.app
+  process.env.CORS_ORIGIN,       // ej: https://automotorsrick-cotizaciones.vercel.app
   "http://localhost:5173",
   "http://localhost:3000",
 ].filter(Boolean);
 
-const isVercelPreview = (origin) => {
-  // permite: https://automotorsrick-cotizaciones-xxxx.vercel.app
-  return /^https:\/\/automotorsrick-cotizaciones-.*\.vercel\.app$/.test(origin);
-};
+const isVercelPreview = (origin) =>
+  /^https:\/\/automotorsrick-cotizaciones-.*\.vercel\.app$/.test(origin);
 
 app.use(
   cors({
     origin: (origin, cb) => {
-      // requests sin origin (Postman / curl) -> permitir
-      if (!origin) return cb(null, true);
+      if (!origin) return cb(null, true); // apps móviles / postman
 
       if (allowedExact.includes(origin) || isVercelPreview(origin)) {
         return cb(null, true);
@@ -29,13 +26,28 @@ app.use(
 
       return cb(new Error(`CORS bloqueado para este origen: ${origin}`));
     },
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type"],
   })
 );
 
 app.use(express.json({ limit: "2mb" }));
 
+// --- ✅ Cachea la ruta de chromium (NO recalcular por request) ---
+let chromiumPathPromise = null;
+function getChromiumPath() {
+  if (!chromiumPathPromise) chromiumPathPromise = chromium.executablePath();
+  return chromiumPathPromise;
+}
+
+// --- ✅ Lock para evitar 2 PDFs al mismo tiempo (evita ETXTBSY) ---
+let pdfLock = Promise.resolve();
+function withPdfLock(fn) {
+  const run = pdfLock.then(fn, fn);
+  // mantenemos la cola viva aunque falle
+  pdfLock = run.catch(() => {});
+  return run;
+}
+
+// --- helpers PDF ---
 function money(n) {
   const v = Number(n || 0);
   return v.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
@@ -73,16 +85,15 @@ function renderHTML(data) {
       const cant = Number(it.cantidad || 0);
       const precio = Number(it.precio || 0);
       const totalRow = cant * precio;
-
       return `
-      <tr>
-        <td class="code">${(it.codigo || "").toString()}</td>
-        <td class="desc">${(it.descripcion || "").toString()}</td>
-        <td class="qty">${cant || ""}</td>
-        <td class="price">${money(precio)}</td>
-        <td class="lineTotal">${money(totalRow)}</td>
-      </tr>
-    `;
+        <tr>
+          <td class="code">${(it.codigo || "").toString()}</td>
+          <td class="desc">${(it.descripcion || "").toString()}</td>
+          <td class="qty">${cant || ""}</td>
+          <td class="price">${money(precio)}</td>
+          <td class="lineTotal">${money(totalRow)}</td>
+        </tr>
+      `;
     })
     .join("");
 
@@ -172,27 +183,54 @@ function renderHTML(data) {
   </div>
 </body>
 </html>
-  `;
+`;
 }
 
-app.post("/api/pdf", async (req, res) => {
+// --- ✅ Retry helper para ETXTBSY ---
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function generatePdfBuffer(html) {
   let browser;
   let page;
-
   try {
-    const html = renderHTML(req.body);
+    const execPath = await getChromiumPath();
 
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    });
+    // Intentamos hasta 3 veces si sale ETXTBSY
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        browser = await puppeteer.launch({
+          args: chromium.args,
+          defaultViewport: chromium.defaultViewport,
+          executablePath: execPath,
+          headless: chromium.headless,
+        });
+        break;
+      } catch (e) {
+        if (e?.code === "ETXTBSY" && attempt < 3) {
+          await sleep(300 * attempt);
+          continue;
+        }
+        throw e;
+      }
+    }
 
     page = await browser.newPage();
     await page.setContent(html, { waitUntil: "domcontentloaded" });
 
     const pdf = await page.pdf({ format: "A4", printBackground: true });
+    return pdf;
+  } finally {
+    try { if (page) await page.close(); } catch (_) {}
+    try { if (browser) await browser.close(); } catch (_) {}
+  }
+}
+
+app.post("/api/pdf", async (req, res) => {
+  try {
+    const html = renderHTML(req.body);
+
+    // ✅ Serializa (una solicitud a la vez)
+    const pdf = await withPdfLock(() => generatePdfBuffer(html));
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", 'attachment; filename="cotizacion.pdf"');
@@ -200,9 +238,6 @@ app.post("/api/pdf", async (req, res) => {
   } catch (e) {
     console.error("PDF error:", e);
     return res.status(500).json({ error: "Error generando PDF" });
-  } finally {
-    try { if (page) await page.close(); } catch (_) {}
-    try { if (browser) await browser.close(); } catch (_) {}
   }
 });
 
