@@ -44,6 +44,8 @@ export default function App() {
     { codigo: "", descripcion: "", cantidad: 1, precio: 0, precioUI: "" },
   ]);
 
+  const [generando, setGenerando] = useState(false);
+
   const subtotal = useMemo(
     () =>
       items.reduce(
@@ -84,8 +86,18 @@ export default function App() {
     ]);
   };
 
+  // ✅ formatear precio al salir o presionar enter
+  const commitPrecioFormat = (idx) => {
+    const it = items[idx];
+    const num = Number(it?.precio || 0);
+    updateItem(idx, "precioUI", num === 0 ? "" : formatInputWithCommas(num));
+  };
+
   // ✅ Generar PDF
   const generarPDF = async () => {
+    if (generando) return;
+    setGenerando(true);
+
     try {
       const payload = {
         tallerNombre: "AUTOMOTORSRICK",
@@ -95,8 +107,6 @@ export default function App() {
         fecha: new Date().toISOString(),
         aplicarIva,
         costoEnvio,
-
-        // ✅ mandamos SOLO lo necesario (sin precioUI)
         items: items.map((it) => ({
           codigo: it.codigo,
           descripcion: it.descripcion,
@@ -137,14 +147,10 @@ export default function App() {
       alert(
         "Error al generar el PDF. Revisa que el backend esté encendido y sin errores."
       );
+    } finally {
+      // ✅ IMPORTANTÍSIMO: siempre regresar a false
+      setGenerando(false);
     }
-  };
-
-  // ✅ formatear precio al salir o presionar enter
-  const commitPrecioFormat = (idx) => {
-    const it = items[idx];
-    const num = Number(it?.precio || 0);
-    updateItem(idx, "precioUI", num === 0 ? "" : formatInputWithCommas(num));
   };
 
   return (
@@ -192,9 +198,7 @@ export default function App() {
               placeholder="0.00"
               onFocus={(e) => e.target.select()}
               onChange={(e) =>
-                setCostoEnvio(
-                  e.target.value === "" ? 0 : Number(e.target.value)
-                )
+                setCostoEnvio(e.target.value === "" ? 0 : Number(e.target.value))
               }
             />
           </label>
@@ -238,13 +242,19 @@ export default function App() {
                       />
                     </td>
 
+                    {/* ✅ Cantidad para móvil (teclado numérico y sin "02") */}
                     <td>
                       <input
-                        type="number"
-                        value={it.cantidad}
-                        onChange={(e) =>
-                          updateItem(idx, "cantidad", Number(e.target.value))
-                        }
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={String(it.cantidad ?? 1)}
+                        onChange={(e) => {
+                          const v = e.target.value.replace(/\D/g, "");
+                          const n =
+                            v === "" ? 1 : Math.max(1, parseInt(v, 10));
+                          updateItem(idx, "cantidad", n);
+                        }}
                       />
                     </td>
 
@@ -285,7 +295,7 @@ export default function App() {
                       <button
                         className="danger"
                         onClick={() => removeRow(idx)}
-                        disabled={items.length === 1}
+                        disabled={items.length === 1 || generando}
                       >
                         ✕
                       </button>
@@ -310,9 +320,13 @@ export default function App() {
         </div>
 
         <div className="actions">
-          <button onClick={addRow}>+ Agregar partida</button>
-          <button className="primary" onClick={generarPDF}>
-            Generar PDF
+          <button onClick={addRow} disabled={generando}>
+            + Agregar partida
+          </button>
+
+          {/* ✅ BOTÓN con loader */}
+          <button className="primary" onClick={generarPDF} disabled={generando}>
+            {generando ? "Generando..." : "Generar PDF"}
           </button>
         </div>
       </div>
